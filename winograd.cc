@@ -18,8 +18,8 @@ void image_transform(float *__restrict__ packed_image,
   V_tensor_t V_tensor = (V_tensor_t)V;
 
   float z0, z1, z2, z3, z4, z5, z6;
-  #pragma omp parallel for
-  for (int64_t idx = 0; idx < collapsed_dim_size; idx++) {
+  #pragma omp parallel for collapse(2) schedule(static) private(z0,z1,z2,z3,z4,z5,z6)
+  for (int64_t idx = 0; idx < collapsed_dim_size; ++idx) {
     //TODO:parallel z1 z2..
     for (int64_t w = 0; w < ti.tile_in_w; ++w) {
       z6 = packed_image_tensor[0][w][idx];
@@ -69,7 +69,7 @@ void image_transform(float *__restrict__ packed_image,
       V_tensor[4][w][idx] = z4;
       V_tensor[5][w][idx] = z5;
     }
-
+    #pragma omp for nowait
     for (int64_t h = 0; h < ti.tile_in_h; ++h) {
       z6 = V_tensor[h][0][idx];
 
