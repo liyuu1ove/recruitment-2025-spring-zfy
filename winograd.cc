@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <omp.h>
 
 #include "utils.h"
 
@@ -17,8 +18,9 @@ void image_transform(float *__restrict__ packed_image,
   V_tensor_t V_tensor = (V_tensor_t)V;
 
   float z0, z1, z2, z3, z4, z5, z6;
-
+  #pragma omp parallel for
   for (int64_t idx = 0; idx < collapsed_dim_size; idx++) {
+    //TODO:parallel z1 z2..
     for (int64_t w = 0; w < ti.tile_in_w; ++w) {
       z6 = packed_image_tensor[0][w][idx];
 
@@ -355,8 +357,9 @@ void sgemm(const int64_t M, const int64_t N, const int64_t K, float *A, float *B
   A_tensor_t A_tensor = (A_tensor_t)A;
   B_tensor_t B_tensor = (B_tensor_t)B;
   C_tensor_t C_tensor = (C_tensor_t)C;
-
+  #pragma omp parallel for
   for (int64_t m = 0; m < M; ++m) {
+    #pragma omp parallel for
     for (int64_t n = 0; n < N; ++n) {
       C_tensor[n][m] = 0;
       for (int64_t k = 0; k < K; ++k) {
