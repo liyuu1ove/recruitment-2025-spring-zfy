@@ -18,9 +18,8 @@ void image_transform(float *__restrict__ packed_image,
   V_tensor_t V_tensor = (V_tensor_t)V;
 
   float z0, z1, z2, z3, z4, z5, z6;
-  #pragma omp parallel for collapse(2) schedule(static) private(z0,z1,z2,z3,z4,z5,z6)
+  #pragma omp parallel for schedule(static) private(z0,z1,z2,z3,z4,z5,z6)
   for (int64_t idx = 0; idx < collapsed_dim_size; ++idx) {
-    //TODO:parallel z1 z2..
     for (int64_t w = 0; w < ti.tile_in_w; ++w) {
       z6 = packed_image_tensor[0][w][idx];
 
@@ -69,7 +68,6 @@ void image_transform(float *__restrict__ packed_image,
       V_tensor[4][w][idx] = z4;
       V_tensor[5][w][idx] = z5;
     }
-    #pragma omp for nowait
     for (int64_t h = 0; h < ti.tile_in_h; ++h) {
       z6 = V_tensor[h][0][idx];
 
@@ -132,7 +130,7 @@ void filter_transform(float *__restrict__ packed_filter,
   U_tensor_t U_tensor = (U_tensor_t)U;
 
   float z0, z1, z2, z3, z4, z5, z6;
-
+  #pragma omp parallel for private(z0,z1,z2,z3,z4,z5,z6)
   for (int64_t idx = 0; idx < collapsed_dim_size; idx++) {
     for (int64_t w = 0; w < fs.w; ++w) {
       z6 = packed_filter_tensor[0][w][idx];
@@ -209,7 +207,7 @@ void output_transform(float *__restrict__ M,
   M_tensor_t M_tensor = (M_tensor_t)M;
   Y_tensor_t Y_tensor = (Y_tensor_t)Y;
   float z0, z1, z2, z3, z4;
-
+  #pragma omp parallel for private(z0,z1,z2,z3,z4)
   for (int64_t idx = 0; idx < collapsed_dim_size; idx++) {
     for (int64_t w = 0; w < ti.tile_in_w; ++w) {
       z4 = M_tensor[0][w][idx];
@@ -294,11 +292,11 @@ void filter_packing(float *__restrict__ filter, float *__restrict__ packed_filte
   typedef float(*packed_filter_tensor_t)[fs.w][fs.oc][fs.ic];
   filter_tensor_t filter_tensor = (filter_tensor_t)filter;
   packed_filter_tensor_t packed_filter_tensor = (packed_filter_tensor_t)packed_filter;
-
+  #pragma omp parallel for
   for (int64_t h = 0; h < fs.h; ++h)
     for (int64_t w = 0; w < fs.w; ++w)
-      for (int64_t oc = 0; oc < fs.oc; oc++)
-        for (int64_t ic = 0; ic < fs.ic; ic++)
+      for (int64_t oc = 0; oc < fs.oc; ++oc)
+        for (int64_t ic = 0; ic < fs.ic; ++ic)//把这里的的x++换成++x之后竟然多了3GFlops
           packed_filter_tensor[h][w][oc][ic] = filter_tensor[oc][ic][h][w];
 }
 
@@ -310,9 +308,9 @@ void image_packing(float *__restrict__ image,
   typedef float(*image_tensor_t)[is.ic][is.h][is.w];
   packedImage_tensor_t packed_image_tensor = (packedImage_tensor_t)packed_image;
   image_tensor_t image_tensor = (image_tensor_t)image;
-
-  for (int64_t tile = 0; tile < ti.num_tiles; tile++) {
-    for (int64_t ic = 0; ic < is.ic; ic++) {
+  #pragma omp parallel for
+  for (int64_t tile = 0; tile < ti.num_tiles; ++tile) {
+    for (int64_t ic = 0; ic < is.ic; ++ic) {
       for (int64_t h = 0; h < ti.tile_in_h; ++h) {
         for (int64_t w = 0; w < ti.tile_in_w; ++w) {
           tile_index_t tidx = get_tile_index(tile, ti);
@@ -335,11 +333,11 @@ void output_unpacking_store(float *__restrict__ Y,
   typedef float(*out_tensor_t)[os.oc][os.h][os.w];
   Y_tensor_t Y_tensor = (Y_tensor_t)Y;
   out_tensor_t out_tensor = (out_tensor_t)out;
-
+  #pragma omp parallel for
   for (int64_t h = 0; h < ti.tile_out_h; ++h) {
     for (int64_t w = 0; w < ti.tile_out_w; ++w) {
-      for (int64_t oc = 0; oc < os.oc; oc++) {
-        for (int64_t tile = 0; tile < ti.num_tiles; tile++) {
+      for (int64_t oc = 0; oc < os.oc; ++oc) {
+        for (int64_t tile = 0; tile < ti.num_tiles; ++tile) {
           tile_index_t tidx = get_tile_index(tile, ti);
           int64_t batch = tidx.b, ww = tidx.tw, hh = tidx.th;
           if (hh * 4 + h < os.h && ww * 4 + w < os.w)
