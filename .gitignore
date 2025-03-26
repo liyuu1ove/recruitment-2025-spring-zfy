@@ -2,4 +2,3 @@ winograd
 /slurm-error
 /slurm-output
 /vtune
-/cuda_test
