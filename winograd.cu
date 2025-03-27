@@ -3,7 +3,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+
 #include <omp.h>
+#include <stdio.h>
+#include <cuda.h>
 
 #include "utils.h"
 
@@ -368,8 +371,7 @@ void sgemm(const int64_t M, const int64_t N, const int64_t K, float *A, float *B
 }
 
 //cuda
-#include <stdio.h>
-#include <cuda.h>
+
 const int TM = 8;
 const int TN = 8;
 const int BLOCK_DIM_x = 16;
