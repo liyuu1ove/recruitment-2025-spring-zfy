@@ -7,7 +7,7 @@
 #include <omp.h>
 
 #include "utils.h"
-#include "sgemm_kernel.h"
+#include "cuda_kernel.h"
 
 void image_transform(float *__restrict__ packed_image,
                      float *__restrict__ V,
