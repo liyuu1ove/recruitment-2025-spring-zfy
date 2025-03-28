@@ -7,7 +7,8 @@
 #include <omp.h>
 
 #include "utils.h"
-#include "cuda_kernel.h"
+//#include "cuda_kernel.h"
+#include "winograd_4x4_3x3.h"
 
 void image_transform(float *__restrict__ packed_image,
                      float *__restrict__ V,
@@ -379,51 +380,5 @@ void winograd_convolution(
     const int output_channel_num,
     const int batch_num,
     float *__restrict__ out) {
-  /* new vars of shape */
-  const image_shape_t is = {.bs = batch_num, .ic = input_channel_num, .h = image_height, .w = image_width};
-  const filter_shape_t fs = {.oc = output_channel_num, .ic = input_channel_num, .h = FLT_H, .w = FLT_W};
-  const out_shape_t os = get_output_shape(is, fs);
-  const tiling_info_t ti = get_tiling_info(is, os);
-  const U_shape_t us = get_U_shape(fs, ti);
-  const V_shape_t vs = get_V_shape(is, ti);
-
-  float *packed_filter = (float *)malloc(sizeof(float) * fs.h * fs.w * fs.oc * fs.ic);
-  float *packed_image = (float *)malloc(sizeof(float) * ti.tile_in_h * ti.tile_in_w * ti.num_tiles * is.ic);
-  float *U = (float *)malloc(sizeof(float) * ti.tile_in_h * ti.tile_in_w * us.oc * us.ic);
-  float *V = (float *)malloc(sizeof(float) * ti.tile_in_h * ti.tile_in_w * vs.num_tiles * vs.ic);
-  float *M = (float *)malloc(sizeof(float) * ti.tile_in_h * ti.tile_in_w * us.oc * vs.num_tiles);
-  float *Y = (float *)malloc(sizeof(float) * ti.tile_out_h * ti.tile_in_w * os.oc * ti.num_tiles);
-
-  filter_packing(filter, packed_filter, fs);
-  filter_transform(packed_filter, U, fs, us, us.oc * us.ic);
-
-  image_packing(image, packed_image, is, ti);
-  image_transform(packed_image, V, vs, ti, vs.ic * vs.num_tiles);
-
-  for (int64_t h = 0; h < ti.tile_in_h; ++h) {
-    for (int64_t w = 0; w < ti.tile_in_w; ++w) {
-      typedef float(*U_tensor_t)[ti.tile_in_w][us.oc][us.ic];
-      typedef float(*V_tensor_t)[ti.tile_in_w][vs.num_tiles][vs.ic];
-      typedef float(*M_tensor_t)[ti.tile_in_w][us.oc][vs.num_tiles];
-      U_tensor_t U_tensor = (U_tensor_t)U;
-      V_tensor_t V_tensor = (V_tensor_t)V;
-      M_tensor_t M_tensor = (M_tensor_t)M;
-      cublasMatrix(vs.num_tiles,//origin oc ic
-            us.ic,
-            us.oc,
-            (float *)(V_tensor[h][w]),
-            (float *)(U_tensor[h][w]),
-            (float *)(M_tensor[h][w]));
-    }
-  }
-
-  output_transform(M, Y, ti, us.oc * vs.num_tiles);
-  output_unpacking_store(Y, out, os, ti);
-
-  free(packed_filter);
-  free(packed_image);
-  free(U);
-  free(V);
-  free(M);
-  free(Y);
+    convWinograd_4x4_3x3(image,batch_num,input_channel_num,image_height,image_width,filter,output_channel_num,out);
 }
