@@ -29,15 +29,5 @@
         }                                                   \
     }
 
-#define CUDNN_CALL(call)                                   \
-    {                                                      \
-        cudnnStatus_t cudnnError = call;                   \
-        if (cudnnError != CUDNN_STATUS_SUCCESS)            \
-        {                                                  \
-            fprintf(stderr, "cuDNN error at %s:%d - %d\n", \
-                    __FILE__, __LINE__, cudnnError);       \
-            exit(EXIT_FAILURE);                            \
-        }                                                  \
-    }
-
 #endif
+//偷来的检查错误宏，没什么性能太大影响
