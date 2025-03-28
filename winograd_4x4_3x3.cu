@@ -7,11 +7,13 @@
 #include "utils.cuh"
 #include "winograd_4x4_3x3.h"
 
+
+
 /*
-    filter_transform = [6, 6, K, C]
-    input_transform = [6, 6, C, N, th, tw]
-    hadamard = [6, 6, K, N, th, tw]
-    inverse transform = [6, 6, K, N, th, tw] -> [4, 4, th, tw] (per K, N) -> [N, K, H, W]
+    filter_transform = [6, 6, OC, IC]
+    image_transform = [6, 6, IC, Batch, th, tw]
+    sgemm = [6, 6, K, Batch, th, tw]//use cublas batch sgemm
+    output_transform = [6, 6, OC, Batch, th, tw] -> [4, 4, th, tw] (per OC, Batch) -> [Batch, OC, H, W]
 */
 
 __device__ __forceinline__ void multiply_AT_4x4_3x3(const float in[6], float out[4])
@@ -22,24 +24,25 @@ __device__ __forceinline__ void multiply_AT_4x4_3x3(const float in[6], float out
     //     0,  1,  1,  4,  4,  0,
     //     0,  1, -1,  8, -8,  1
     // };
-    float temp1 = in[1] + in[2];
-    float temp2 = in[1] - in[2];
-    float temp3 = in[3] + in[4];
-    float temp4 = in[3] - in[4];
+    float temp[4]={in[1]+in[2],in[1]-in[2],in[3] + in[4],in[3] - in[4]};
+    // float temp1 = in[1] + in[2];
+    // float temp2 = in[1] - in[2];
+    // float temp3 = in[3] + in[4];
+    // float temp4 = in[3] - in[4];
 
-    out[0] = in[0] + temp1 + temp3;
-    out[1] = temp2 + 2 * temp4;
-    out[2] = temp1 + 4 * temp3;
-    out[3] = temp2 + 8 * temp4 + in[5];
+    out[0] = in[0] + temp[0] + temp[2];
+    out[1] = temp[1] + 2 * temp[3];
+    out[2] = temp[0] + 4 * temp[2];
+    out[3] = temp[1] + 8 * temp[3] + in[5];
 }
 
 template <int NUM_TILES_PER_BLOCK, int BLOCK_SIZE>
 __global__ void winograd_4x4_3x3_ATtA(
     const float *t, const int N, const int K, const int TILES_H, const int TILES_W,
-    float *out, const int OUT_H, const int OUT_W)
+    float *out, const int OUT_H, const int OUT_W)//output_transform
 {
     /*
-        input -> hadamard, [6 x 6 x K x N x TILES_H x TILES_W]
+        input -> sgemm, [6 x 6 x K x N x TILES_H x TILES_W]
         output -> conv output, [N x K x OUT_H x OUT_W]
     */
     const int NUM_TILES = TILES_H * TILES_W;
@@ -143,16 +146,14 @@ __device__ __forceinline__ void multiply_BT_4x4_3x3(const float in[6], float out
 
     int tmp0 = in[3] - 4 * in[1];
     int tmp1 = in[4] - 4 * in[2];
+    int tmp2 = 2 * (in[1] - in[3]);
+    int tmp3 = in[4] - in[2];
 
     out[0] = 4 * in[0] - 5 * in[2] + in[4];
     out[1] = tmp0 + tmp1;
     out[2] = tmp1 - tmp0;
-
-    tmp0 = 2 * (in[1] - in[3]);
-    tmp1 = in[4] - in[2];
-
-    out[3] = tmp1 - tmp0;
-    out[4] = tmp0 + tmp1;
+    out[3] = tmp3 - tmp2;
+    out[4] = tmp2 + tmp3;
     out[5] = 4 * in[1] - 5 * in[3] + in[5];
 }
 
