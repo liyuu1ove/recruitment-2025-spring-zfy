@@ -8,7 +8,7 @@
 
 #include "utils.h"
 //#include "cuda_kernel.h"
-#include "winograd_4x4_3x3.h"
+#include "winograd_cuda.h"
 
 void image_transform(float *__restrict__ packed_image,
                      float *__restrict__ V,
@@ -380,5 +380,5 @@ void winograd_convolution(
     const int output_channel_num,
     const int batch_num,
     float *__restrict__ out) {
-    convWinograd_4x4_3x3(image,batch_num,input_channel_num,image_height,image_width,filter,output_channel_num,out);
+    winograd_convolution_cuda(image,batch_num,input_channel_num,image_height,image_width,filter,output_channel_num,out);
 }

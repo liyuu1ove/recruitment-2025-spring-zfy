@@ -5,7 +5,7 @@
 #include <iostream>
 
 #include "utils.cuh"
-#include "winograd_4x4_3x3.h"
+#include "winograd_cuda.h"
 
 
 
@@ -16,7 +16,7 @@
     output_transform = [6, 6, OC, Batch, th, tw] -> [4, 4, th, tw] (per OC, Batch) -> [Batch, OC, H, W]
 */
 
-__device__ __forceinline__ void multiply_AT_4x4_3x3(const float in[6], float out[4])
+__device__ __forceinline__ void multiply_AT(const float in[6], float out[4])
 {
     //  A = {
     //     1,  1,  1,  1,  1,  0,
@@ -25,10 +25,6 @@ __device__ __forceinline__ void multiply_AT_4x4_3x3(const float in[6], float out
     //     0,  1, -1,  8, -8,  1
     // };
     float temp[4]={in[1]+in[2],in[1]-in[2],in[3] + in[4],in[3] - in[4]};
-    // float temp1 = in[1] + in[2];
-    // float temp2 = in[1] - in[2];
-    // float temp3 = in[3] + in[4];
-    // float temp4 = in[3] - in[4];
 
     out[0] = in[0] + temp[0] + temp[2];
     out[1] = temp[1] + 2 * temp[3];
@@ -37,7 +33,7 @@ __device__ __forceinline__ void multiply_AT_4x4_3x3(const float in[6], float out
 }
 
 template <int NUM_TILES_PER_BLOCK, int BLOCK_SIZE>
-__global__ void winograd_4x4_3x3_ATtA(
+__global__ void winograd_ATtA(
     const float *t, const int N, const int K, const int TILES_H, const int TILES_W,
     float *out, const int OUT_H, const int OUT_W)//output_transform
 {
@@ -81,7 +77,7 @@ __global__ void winograd_4x4_3x3_ATtA(
                 in_col[row_idx] = shared_6x6[tile_idx][row_idx * 6 + col_idx];
 
             float out_col[4];
-            multiply_AT_4x4_3x3(in_col, out_col);
+            multiply_AT(in_col, out_col);
 
             for (int row_idx = 0; row_idx < 4; ++row_idx)
                 shared_4x6[tile_idx][row_idx][col_idx] = out_col[row_idx];
@@ -103,7 +99,7 @@ __global__ void winograd_4x4_3x3_ATtA(
                 in_row[col_idx] = shared_4x6[tile_idx][row_idx][col_idx];
 
             float out_row[4];
-            multiply_AT_4x4_3x3(in_row, out_row);
+            multiply_AT(in_row, out_row);
 
             for (int col_idx = 0; col_idx < 4; ++col_idx)
                 shared_6x6[tile_idx][row_idx * 4 + col_idx] = out_row[col_idx];
@@ -131,7 +127,7 @@ __global__ void winograd_4x4_3x3_ATtA(
     }
 }
 
-__device__ __forceinline__ void multiply_BT_4x4_3x3(const float in[6], float out[6])
+__device__ __forceinline__ void multiply_BT(const float in[6], float out[6])
 {
     /*
         BT = [
@@ -143,28 +139,24 @@ __device__ __forceinline__ void multiply_BT_4x4_3x3(const float in[6], float out
                 0,  4,  0, -5, 0, 1
              ]
     */
-
-    int tmp0 = in[3] - 4 * in[1];
-    int tmp1 = in[4] - 4 * in[2];
-    int tmp2 = 2 * (in[1] - in[3]);
-    int tmp3 = in[4] - in[2];
+    float temp[4]={in[3] - 4 * in[1],in[4] - 4 * in[2],2 * (in[1] - in[3]),in[4] - in[2]};
 
     out[0] = 4 * in[0] - 5 * in[2] + in[4];
-    out[1] = tmp0 + tmp1;
-    out[2] = tmp1 - tmp0;
-    out[3] = tmp3 - tmp2;
-    out[4] = tmp2 + tmp3;
+    out[1] = temp[0] + temp[1];
+    out[2] = temp[1] - temp[0];
+    out[3] = temp[3] - temp[2];
+    out[4] = temp[2] + temp[3];
     out[5] = 4 * in[1] - 5 * in[3] + in[5];
 }
 
 template <int TILES_H_PER_BLOCK, int TILES_W_PER_BLOCK, int BLOCK_SIZE>
-__global__ void winograd_4x4_3x3_BTdB(
+__global__ void winograd_BTdB(
     const float *d, const int N, const int C, const int H, const int W,
-    float *inp_transform, const int TILES_H, const int TILES_W)
+    float *image_transform, const int TILES_H, const int TILES_W)//image_transform
 {
     /*
         Input: d [N, C, H, W]
-        Ouput: inp_transform [6, 6, C, N, TILES_H, TILES_W]
+        Ouput: image_transform [6, 6, C, N, TILES_H, TILES_W]
     */
     const int tile_col_idx_start = blockIdx.x * TILES_W_PER_BLOCK;
     const int tile_row_idx_start = blockIdx.y * TILES_H_PER_BLOCK;
@@ -211,7 +203,7 @@ __global__ void winograd_4x4_3x3_BTdB(
                 in_col[row_idx] = s_d[tile_row_idx * 4 + row_idx][tile_col_idx * 4 + col_idx];
 
             float out_col[6];
-            multiply_BT_4x4_3x3(in_col, out_col);
+            multiply_BT(in_col, out_col);
 
             for (int row_idx = 0; row_idx < 6; ++row_idx)
                 BTd[tile_idx][row_idx][col_idx] = out_col[row_idx];
@@ -237,7 +229,7 @@ __global__ void winograd_4x4_3x3_BTdB(
                 in_row[col_idx] = BTd[tile_idx][row_idx][col_idx];
 
             float out_row[6];
-            multiply_BT_4x4_3x3(in_row, out_row);
+            multiply_BT(in_row, out_row);
 
             for (int col_idx = 0; col_idx < 6; ++col_idx)
                 BTdB[tile_idx][row_idx * 6 + col_idx] = out_row[col_idx];
@@ -256,12 +248,12 @@ __global__ void winograd_4x4_3x3_BTdB(
         const int global_tile_col_idx = tile_col_idx + tile_col_idx_start;
         const int global_tile_row_idx = tile_row_idx + tile_row_idx_start;
         if (global_tile_col_idx < TILES_W && global_tile_row_idx < TILES_H)
-            inp_transform[(((offset * C + c) * N + n) * TILES_H + global_tile_row_idx) * TILES_W + global_tile_col_idx] = BTdB[tile_idx][offset];
+            image_transform[(((offset * C + c) * N + n) * TILES_H + global_tile_row_idx) * TILES_W + global_tile_col_idx] = BTdB[tile_idx][offset];
     }
 }
 
 
-__device__ __forceinline__ void multiply_G_4x4_3x3(const float in[3], float out[6])
+__device__ __forceinline__ void multiply_G(const float in[3], float out[6])
 {
     // G = [
     //      1/4.0,      0,       0,
@@ -272,22 +264,18 @@ __device__ __forceinline__ void multiply_G_4x4_3x3(const float in[3], float out[
     //          0,       0,      1
     // ]
 
-    out[0] = in[0] / 4;
-    float tmp0 = (-in[0] - in[2]);
-    out[1] = (tmp0 - in[1]) / 6;
-    out[2] = (tmp0 + in[1]) / 6;
+    float temp[4]={(-in[0] - in[2])/6.0f,in[0] / 24.0f,in[1] / 12.0f,in[2] / 6.0f};
 
-    tmp0 = in[0] / 24;
-    float tmp1 = in[1] / 12;
-    float tmp2 = in[2] / 6;
-
-    out[3] = tmp0 + tmp1 + tmp2;
-    out[4] = tmp0 - tmp1 + tmp2;
+    out[0] = in[0] / 4.0f;
+    out[1] = temp[0] - 2*temp[2];
+    out[2] = temp[0] + 2*temp[2];
+    out[3] = temp[1] + temp[2] + temp[3];
+    out[4] = temp[1] - temp[2] + temp[3];
     out[5] = in[2];
 }
 
 template <int NUM_KERNELS_PER_BLOCK, int BLOCK_SIZE>
-__global__ void winograd_4x4_3x3_GgGT(
+__global__ void winograd_GgGT(
     const float *g, const int K, const int C,
     float *filter_transform)
 {
@@ -334,7 +322,7 @@ __global__ void winograd_4x4_3x3_GgGT(
                 in_col[row_idx] = shared_6x6[kc_idx][row_idx][col_idx];
 
             float out_col[6];
-            multiply_G_4x4_3x3(in_col, out_col);
+            multiply_G(in_col, out_col);
 
             for (int row_idx = 0; row_idx < 6; ++row_idx)
                 shared_6x3[kc_idx][row_idx][col_idx] = out_col[row_idx];
@@ -356,7 +344,7 @@ __global__ void winograd_4x4_3x3_GgGT(
                 in_row[col_idx] = shared_6x3[kc_idx][row_idx][col_idx];
 
             float out_row[6];
-            multiply_G_4x4_3x3(in_row, out_row);
+            multiply_G(in_row, out_row);
 
             for (int col_idx = 0; col_idx < 6; ++col_idx)
                 shared_6x6[kc_idx][row_idx][col_idx] = out_row[col_idx];
@@ -380,7 +368,7 @@ __global__ void winograd_4x4_3x3_GgGT(
 }
 
 
-void convWinograd_4x4_3x3(float *h_img, const int N, const int C, const int H, const int W, const float *h_f, const int K, float *out)
+void winograd_convolution_cuda(float *h_img, const int N, const int C, const int H, const int W, const float *h_f, const int K, float *out)
 {
 
     auto divUp = [](int x, int y)
@@ -395,38 +383,38 @@ void convWinograd_4x4_3x3(float *h_img, const int N, const int C, const int H, c
 
         CUDA_CALL(cudaMalloc((void **)&d_filter_transform, 6 * 6 * K * C * sizeof(float)));
 
-        const int NUM_KERNELS_PER_BLOCK = 21, 
-                  BLOCK_SIZE = 128;
+        const int NUM_KERNELS_PER_BLOCK = 16, //21
+                  BLOCK_SIZE = 256;//128
 
         dim3 grid(divUp(K * C, 
                         NUM_KERNELS_PER_BLOCK));
 
-        winograd_4x4_3x3_GgGT<NUM_KERNELS_PER_BLOCK, BLOCK_SIZE><<<grid, BLOCK_SIZE>>>(d_F, K, C, d_filter_transform);
+        winograd_GgGT<NUM_KERNELS_PER_BLOCK, BLOCK_SIZE><<<grid, BLOCK_SIZE>>>(d_F, K, C, d_filter_transform);
     }
 
     // input transform
     const int TILES_Y = divUp(H, 4);
     const int TILES_X = divUp(W, 4);
 
-    float *d_inp_transform;
+    float *d_image_transform;
     float *d_img;
 
     {
-        CUDA_CALL(cudaMalloc((void **)&d_inp_transform, 6 * 6 * C * N * TILES_Y * TILES_X * sizeof(float)));
+        CUDA_CALL(cudaMalloc((void **)&d_image_transform, 6 * 6 * C * N * TILES_Y * TILES_X * sizeof(float)));
         
         CUDA_CALL(cudaMalloc((void **)&d_img, N * C * H * W * sizeof(float)));
         CUDA_CALL(cudaMemcpy(d_img, h_img, N * C * H * W * sizeof(float), cudaMemcpyHostToDevice));
 
-        const int TILES_Y_PER_BLOCK = 4, 
-                  TILES_X_PER_BLOCK = 8, 
-                  BLOCK_SIZE = 128;
+        const int TILES_Y_PER_BLOCK = 8,//4 
+                  TILES_X_PER_BLOCK = 16, //8
+                  BLOCK_SIZE = 256;//128
 
         dim3 grid(divUp(TILES_X, TILES_X_PER_BLOCK),
                   divUp(TILES_Y, TILES_Y_PER_BLOCK),
                   N * C
                 );
 
-        winograd_4x4_3x3_BTdB<TILES_Y_PER_BLOCK, TILES_X_PER_BLOCK, BLOCK_SIZE><<<grid, BLOCK_SIZE>>>(d_img, N, C, H, W, d_inp_transform, TILES_Y, TILES_X);
+        winograd_BTdB<TILES_Y_PER_BLOCK, TILES_X_PER_BLOCK, BLOCK_SIZE><<<grid, BLOCK_SIZE>>>(d_img, N, C, H, W, d_image_transform, TILES_Y, TILES_X);
     }
 
     // hadamard
@@ -446,14 +434,14 @@ void convWinograd_4x4_3x3(float *h_img, const int N, const int C, const int H, c
                                               CUBLAS_OP_N, CUBLAS_OP_N,
                                               (N * TILES_Y * TILES_X), K, C,
                                               &alpha,
-                                              d_inp_transform, (N * TILES_Y * TILES_X), (C * N * TILES_Y * TILES_X),
+                                              d_image_transform, (N * TILES_Y * TILES_X), (C * N * TILES_Y * TILES_X),
                                               d_filter_transform, C, (K * C),
                                               &beta,
                                               d_M, (N * TILES_Y * TILES_X), (K * N * TILES_Y * TILES_X),
                                               36));
 
         CUDA_CALL(cudaFree(d_filter_transform));
-        CUDA_CALL(cudaFree(d_inp_transform));
+        CUDA_CALL(cudaFree(d_image_transform));
     }
 
     // inverse transform
@@ -470,7 +458,7 @@ void convWinograd_4x4_3x3(float *h_img, const int N, const int C, const int H, c
                   N
                 );
 
-        winograd_4x4_3x3_ATtA<NUM_TILES_PER_BLOCK, BLOCK_SIZE><<<grid, BLOCK_SIZE>>>(d_M, N, K, TILES_Y, TILES_X, d_out, OUT_H, OUT_W);
+        winograd_ATtA<NUM_TILES_PER_BLOCK, BLOCK_SIZE><<<grid, BLOCK_SIZE>>>(d_M, N, K, TILES_Y, TILES_X, d_out, OUT_H, OUT_W);
 
         CUDA_CALL(cudaFree(d_M));
     }
