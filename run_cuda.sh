@@ -15,4 +15,6 @@
 # Note: numactl - Control NUMA policy for processes or shared memory, see `man numactl'.`
 # Note: perf-stat - Run a command and gather performance counter statistics, see `man perf stat'.
 
-numactl --cpunodebind=0-3 --membind=0-3 perf stat -ddd ./cuda_test/he
+export NVTX_CUDA_PER_THREAD_TEMP_DIR=$SLURM_TMPDIR
+mkdir -p $SLURM_TMPDIR
+ncu --set detailed ./winograd conf/vgg16.conf
