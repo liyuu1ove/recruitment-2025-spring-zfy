@@ -8,6 +8,7 @@
 
 #include "utils.h"
 //#include "cuda_kernel.h"
+
 #include "winograd_cuda.h"
 
 void image_transform(float *__restrict__ packed_image,
