@@ -1,0 +1,1 @@
+eval `spack load --sh cuda@12.6.3`
