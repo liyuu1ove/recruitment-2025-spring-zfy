@@ -15,7 +15,8 @@
 */
 
 
-__device__ __forceinline__ void multiply_G(const float in[3], float out[6])
+__device__ __forceinline__ void multiply_G(const float in0,const float in1,const float in2,
+    float& out0,float& out1,float& out2,float& out3,float& out4,float& out5)
 {
     // G = [
     //      1/4.0,      0,       0,
@@ -26,14 +27,14 @@ __device__ __forceinline__ void multiply_G(const float in[3], float out[6])
     //          0,       0,      1
     // ]
 
-    float temp[4]={(-in[0] - in[2])/6.0f,in[0] / 24.0f,in[1] / 12.0f,in[2] / 6.0f};
+    float temp[4]={(-in0 - in2)/6.0f,in0 / 24.0f,in1 / 12.0f,in2 / 6.0f};
 
-    out[0] = in[0] / 4.0f;
-    out[1] = temp[0] - 2*temp[2];
-    out[2] = temp[0] + 2*temp[2];
-    out[3] = temp[1] + temp[2] + temp[3];
-    out[4] = temp[1] - temp[2] + temp[3];
-    out[5] = in[2];
+    out0 = in0 / 4.0f;
+    out1 = temp[0] - 2*temp[2];
+    out2 = temp[0] + 2*temp[2];
+    out3 = temp[1] + temp[2] + temp[3];
+    out4 = temp[1] - temp[2] + temp[3];
+    out5 = in2;
 }
 
 template <int NUM_KERNELS_PER_BLOCK, int BLOCK_SIZE>
@@ -70,22 +71,14 @@ __global__ void winograd_GgGT(
 
     for (int i = threadIdx.x; i < NUM_KERNELS_PER_BLOCK * 3; i += BLOCK_SIZE)
     {
-        // will fetch a col here, 1x3 and multiply above
+        //col-wise g
         const int col_idx = i % 3;
         const int kc_idx = i / 3;
 
         if (kc_idx_start + kc_idx < NUM_KERNELS)
         {
-            float in_col[3];
-
-            for (int row_idx = 0; row_idx < 3; ++row_idx)
-                in_col[row_idx] = shared_6x6[kc_idx][row_idx][col_idx];
-
-            float out_col[6];
-            multiply_G(in_col, out_col);
-
-            for (int row_idx = 0; row_idx < 6; ++row_idx)
-                shared_6x3[kc_idx][row_idx][col_idx] = out_col[row_idx];
+            multiply_G(shared_6x6[kc_idx][0][col_idx],shared_6x6[kc_idx][1][col_idx],shared_6x6[kc_idx][2][col_idx],
+                    shared_6x3[kc_idx][0][col_idx],shared_6x3[kc_idx][1][col_idx],shared_6x3[kc_idx][2][col_idx],shared_6x3[kc_idx][3][col_idx],shared_6x3[kc_idx][4][col_idx],shared_6x3[kc_idx][5][col_idx]);
         }
     }
     __syncthreads();
@@ -93,21 +86,14 @@ __global__ void winograd_GgGT(
     // GgGT
     for (int i = threadIdx.x; i < NUM_KERNELS_PER_BLOCK * 6; i += BLOCK_SIZE)
     {
-        // will fetch a row from Gg
+        // row-wise Gg
         const int row_idx = i % 6;
         const int kc_idx = i / 6;
 
         if (kc_idx + kc_idx_start < NUM_KERNELS)
         {
-            float in_row[3];
-            for (int col_idx = 0; col_idx < 3; ++col_idx)
-                in_row[col_idx] = shared_6x3[kc_idx][row_idx][col_idx];
-
-            float out_row[6];
-            multiply_G(in_row, out_row);
-
-            for (int col_idx = 0; col_idx < 6; ++col_idx)
-                shared_6x6[kc_idx][row_idx][col_idx] = out_row[col_idx];
+            multiply_G(shared_6x3[kc_idx][row_idx][0],shared_6x3[kc_idx][row_idx][1],shared_6x3[kc_idx][row_idx][2],
+                 shared_6x6[kc_idx][row_idx][0], shared_6x6[kc_idx][row_idx][1], shared_6x6[kc_idx][row_idx][2], shared_6x6[kc_idx][row_idx][3], shared_6x6[kc_idx][row_idx][4], shared_6x6[kc_idx][row_idx][5]);
         }
     }
     __syncthreads();
@@ -127,7 +113,8 @@ __global__ void winograd_GgGT(
     }
 }
 
-__device__ __forceinline__ void multiply_BT(const float in[6], float out[6])
+__device__ __forceinline__ void multiply_BT(const float in0,const float in1,const float in2,const float in3,const float in4,const float in5,
+    float& out0,float& out1,float& out2,float& out3,float& out4,float& out5)
 {
     /*
         BT = [
@@ -139,14 +126,14 @@ __device__ __forceinline__ void multiply_BT(const float in[6], float out[6])
                 0,  4,  0, -5, 0, 1
              ]
     */
-    float temp[4]={in[3] - 4 * in[1],in[4] - 4 * in[2],2 * (in[1] - in[3]),in[4] - in[2]};
+    float temp[4]={in3 - 4 * in1,in4 - 4 * in2,2 * (in1 - in3),in4 - in2};
 
-    out[0] = 4 * in[0] - 5 * in[2] + in[4];
-    out[1] = temp[0] + temp[1];
-    out[2] = temp[1] - temp[0];
-    out[3] = temp[3] - temp[2];
-    out[4] = temp[2] + temp[3];
-    out[5] = 4 * in[1] - 5 * in[3] + in[5];
+    out0 = 4 * in0 - 5 * in2 + in4;
+    out1 = temp[0] + temp[1];
+    out2 = temp[1] - temp[0];
+    out3 = temp[3] - temp[2];
+    out4 = temp[2] + temp[3];
+    out5 = 4 * in1 - 5 * in3 + in5;
 }
 
 template <int TILES_H_PER_BLOCK, int TILES_W_PER_BLOCK, int BLOCK_SIZE>
@@ -198,15 +185,9 @@ __global__ void winograd_BTdB(
 
         if (tile_row_idx_start + tile_row_idx < TILES_H && tile_col_idx_start + tile_col_idx < TILES_W)
         {
-            float in_col[6];
-            for (int row_idx = 0; row_idx < 6; ++row_idx)
-                in_col[row_idx] = s_d[tile_row_idx * 4 + row_idx][tile_col_idx * 4 + col_idx];
-
-            float out_col[6];
-            multiply_BT(in_col, out_col);
-
-            for (int row_idx = 0; row_idx < 6; ++row_idx)
-                BTd[tile_idx][row_idx][col_idx] = out_col[row_idx];
+            multiply_BT(s_d[tile_row_idx * 4 + 0][tile_col_idx * 4 + col_idx],s_d[tile_row_idx * 4 + 1][tile_col_idx * 4 + col_idx],s_d[tile_row_idx * 4 + 2][tile_col_idx * 4 + col_idx]
+                ,s_d[tile_row_idx * 4 + 3][tile_col_idx * 4 + col_idx],s_d[tile_row_idx * 4 + 4][tile_col_idx * 4 + col_idx],s_d[tile_row_idx * 4 + 5][tile_col_idx * 4 + col_idx],
+                BTd[tile_idx][0][col_idx],BTd[tile_idx][1][col_idx],BTd[tile_idx][2][col_idx],BTd[tile_idx][3][col_idx],BTd[tile_idx][4][col_idx],BTd[tile_idx][5][col_idx]);
         }
     }
     __syncthreads();
@@ -229,7 +210,8 @@ __global__ void winograd_BTdB(
                 in_row[col_idx] = BTd[tile_idx][row_idx][col_idx];
 
             float out_row[6];
-            multiply_BT(in_row, out_row);
+            multiply_BT(BTd[tile_idx][row_idx][0],BTd[tile_idx][row_idx][1],BTd[tile_idx][row_idx][2],BTd[tile_idx][row_idx][3],BTd[tile_idx][row_idx][4],BTd[tile_idx][row_idx][5],
+                BTdB[tile_idx][row_idx * 6 + 0],BTdB[tile_idx][row_idx * 6 + 1],BTdB[tile_idx][row_idx * 6 + 2],BTdB[tile_idx][row_idx * 6 + 3],BTdB[tile_idx][row_idx * 6 + 4],BTdB[tile_idx][row_idx * 6 + 5]);
 
             for (int col_idx = 0; col_idx < 6; ++col_idx)
                 BTdB[tile_idx][row_idx * 6 + col_idx] = out_row[col_idx];
@@ -251,7 +233,8 @@ __global__ void winograd_BTdB(
             image_transform[(((offset * C + c) * N + n) * TILES_H + global_tile_row_idx) * TILES_W + global_tile_col_idx] = BTdB[tile_idx][offset];
     }
 }
-__device__ __forceinline__ void multiply_AT(const float in[6], float out[4])
+__device__ __forceinline__ void multiply_AT(const float in0,const float in1,const float in2,const float in3,const float in4,const float in5,
+    float& out0,float& out1,float& out2,float& out3)
 {
     //  A = {
     //     1,  1,  1,  1,  1,  0,
@@ -259,12 +242,12 @@ __device__ __forceinline__ void multiply_AT(const float in[6], float out[4])
     //     0,  1,  1,  4,  4,  0,
     //     0,  1, -1,  8, -8,  1
     // };
-    float temp[4]={in[1]+in[2],in[1]-in[2],in[3] + in[4],in[3] - in[4]};
+    float temp[4]={in1+in2,in1-in2,in3 + in4,in3 - in4};
 
-    out[0] = in[0] + temp[0] + temp[2];
-    out[1] = temp[1] + 2 * temp[3];
-    out[2] = temp[0] + 4 * temp[2];
-    out[3] = temp[1] + 8 * temp[3] + in[5];
+    out0 = in0 + temp[0] + temp[2];
+    out1 = temp[1] + 2 * temp[3];
+    out2 = temp[0] + 4 * temp[2];
+    out3 = temp[1] + 8 * temp[3] + in5;
 }
 
 template <int NUM_TILES_PER_BLOCK, int BLOCK_SIZE>
@@ -306,16 +289,10 @@ __global__ void winograd_ATtA(
 
         if (tile_idx_start + tile_idx < NUM_TILES)
         {
-            float in_col[6];
 
-            for (int row_idx = 0; row_idx < 6; ++row_idx)
-                in_col[row_idx] = shared_6x6[tile_idx][row_idx * 6 + col_idx];
+            multiply_AT(shared_6x6[tile_idx][0 * 6 + col_idx],shared_6x6[tile_idx][1 * 6 + col_idx],shared_6x6[tile_idx][2 * 6 + col_idx],shared_6x6[tile_idx][3 * 6 + col_idx],shared_6x6[tile_idx][4 * 6 + col_idx],shared_6x6[tile_idx][5 * 6 + col_idx],
+                shared_4x6[tile_idx][0][col_idx],shared_4x6[tile_idx][1][col_idx],shared_4x6[tile_idx][2][col_idx],shared_4x6[tile_idx][3][col_idx]);
 
-            float out_col[4];
-            multiply_AT(in_col, out_col);
-
-            for (int row_idx = 0; row_idx < 4; ++row_idx)
-                shared_4x6[tile_idx][row_idx][col_idx] = out_col[row_idx];
         }
     }
     __syncthreads();
@@ -329,15 +306,8 @@ __global__ void winograd_ATtA(
 
         if (tile_idx + tile_idx_start < NUM_TILES)
         {
-            float in_row[6];
-            for (int col_idx = 0; col_idx < 6; ++col_idx)
-                in_row[col_idx] = shared_4x6[tile_idx][row_idx][col_idx];
-
-            float out_row[4];
-            multiply_AT(in_row, out_row);
-
-            for (int col_idx = 0; col_idx < 4; ++col_idx)
-                shared_6x6[tile_idx][row_idx * 4 + col_idx] = out_row[col_idx];
+            multiply_AT(shared_4x6[tile_idx][row_idx][0], shared_4x6[tile_idx][row_idx][1],shared_4x6[tile_idx][row_idx][2],shared_4x6[tile_idx][row_idx][3],shared_4x6[tile_idx][row_idx][4],shared_4x6[tile_idx][row_idx][5],
+                shared_6x6[tile_idx][row_idx * 4 + 0],shared_6x6[tile_idx][row_idx * 4 + 1],shared_6x6[tile_idx][row_idx * 4 + 2],shared_6x6[tile_idx][row_idx * 4 + 3]);
         }
     }
     __syncthreads();
@@ -449,7 +419,7 @@ void winograd_convolution_cuda(float *h_img, const int N, const int C, const int
               OUT_W = (W - 3 + 1);
     {
         CUDA_CALL(cudaMalloc((void **)&d_out, N * K * OUT_H * OUT_W * sizeof(float)));
-        const int NUM_TILES_PER_BLOCK = 2,
+        const int NUM_TILES_PER_BLOCK = 64,
                   BLOCK_SIZE = 256;
 
         dim3 grid(divUp(TILES_Y * TILES_X, NUM_TILES_PER_BLOCK), 

@@ -5,6 +5,7 @@
 #SBATCH -c 64
 #SBATCH --exclusive
 #SBATCH --exclude hepnode0
+#SBATCH --gres=gpu:2
 
 # Note: How to run this script on slurm: `sbatch ./run.sh'.
 # Note: see `man sbatch' for more options.
