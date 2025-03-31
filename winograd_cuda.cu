@@ -392,8 +392,12 @@ void winograd_convolution_cuda(float *h_img, const int N, const int C, const int
         CUDA_CALL(cudaMalloc((void **)&d_M, 6 * 6 * K * N * TILES_Y * TILES_X * sizeof(float)));
         cublasHandle_t cbls_handle1;
         cublasCreate(&cbls_handle1);
-        cublasHandle_t cbls_handle2;
-        cublasCreate(&cbls_handle2);
+        // cublasHandle_t cbls_handle2;
+        // cublasCreate(&cbls_handle2);
+        // cublasHandle_t cbls_handle3;
+        // cublasCreate(&cbls_handle3);
+        // cublasHandle_t cbls_handle4;
+        // cublasCreate(&cbls_handle4);
 
         const float alpha = 1.0f,
                     beta = 0.0f;
@@ -405,20 +409,38 @@ void winograd_convolution_cuda(float *h_img, const int N, const int C, const int
                                               CUBLAS_OP_N, CUBLAS_OP_N,
                                               (N * TILES_Y * TILES_X), K, C,
                                               &alpha,
-                                              d_image_transform, (N * TILES_Y * TILES_X), 2*(C * N * TILES_Y * TILES_X),
-                                              d_filter_transform, C, 2*(K * C),
+                                              d_image_transform, (N * TILES_Y * TILES_X), (C * N * TILES_Y * TILES_X),
+                                              d_filter_transform, C, (K * C),
                                               &beta,
-                                              d_M, (N * TILES_Y * TILES_X), 2*(K * N * TILES_Y * TILES_X),
-                                              18));
-        CUBLAS_CALL(cublasSgemmStridedBatched(cbls_handle2,
-        CUBLAS_OP_N, CUBLAS_OP_N,
-        (N * TILES_Y * TILES_X), K, C,
-        &alpha,
-        d_image_transform+(C * N * TILES_Y * TILES_X), (N * TILES_Y * TILES_X), 2*(C * N * TILES_Y * TILES_X),
-        d_filter_transform+(K * C), C, 2*(K * C),
-        &beta,
-        d_M+(K * N * TILES_Y * TILES_X), (N * TILES_Y * TILES_X), 2*(K * N * TILES_Y * TILES_X),
-        18));
+                                              d_M, (N * TILES_Y * TILES_X), (K * N * TILES_Y * TILES_X),
+                                              36));
+        // CUBLAS_CALL(cublasSgemmStridedBatched(cbls_handle2,
+        // CUBLAS_OP_N, CUBLAS_OP_N,
+        // (N * TILES_Y * TILES_X), K, C,
+        // &alpha,
+        // d_image_transform+9*(C * N * TILES_Y * TILES_X), (N * TILES_Y * TILES_X), (C * N * TILES_Y * TILES_X),
+        // d_filter_transform+9*(K * C), C, (K * C),
+        // &beta,
+        // d_M+9*(K * N * TILES_Y * TILES_X), (N * TILES_Y * TILES_X), (K * N * TILES_Y * TILES_X),
+        // 9));
+        // CUBLAS_CALL(cublasSgemmStridedBatched(cbls_handle4,
+        // CUBLAS_OP_N, CUBLAS_OP_N,
+        // (N * TILES_Y * TILES_X), K, C,
+        // &alpha,
+        // d_image_transform+18*(C * N * TILES_Y * TILES_X), (N * TILES_Y * TILES_X), (C * N * TILES_Y * TILES_X),
+        // d_filter_transform+18*(K * C), C, (K * C),
+        // &beta,
+        // d_M+27*(K * N * TILES_Y * TILES_X), (N * TILES_Y * TILES_X), (K * N * TILES_Y * TILES_X),
+        // 9));
+        // CUBLAS_CALL(cublasSgemmStridedBatched(cbls_handle4,
+        // CUBLAS_OP_N, CUBLAS_OP_N,
+        // (N * TILES_Y * TILES_X), K, C,
+        // &alpha,
+        // d_image_transform+27*(C * N * TILES_Y * TILES_X), (N * TILES_Y * TILES_X), (C * N * TILES_Y * TILES_X),
+        // d_filter_transform+27*(K * C), C, (K * C),
+        // &beta,
+        // d_M+27*(K * N * TILES_Y * TILES_X), (N * TILES_Y * TILES_X), (K * N * TILES_Y * TILES_X),
+        // 9));
 
         CUDA_CALL(cudaFree(d_filter_transform));
         CUDA_CALL(cudaFree(d_image_transform));
