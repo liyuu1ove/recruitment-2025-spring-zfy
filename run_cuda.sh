@@ -18,4 +18,4 @@
 
 export NVTX_CUDA_PER_THREAD_TEMP_DIR=$SLURM_TMPDIR
 mkdir -p $SLURM_TMPDIR
-ncu ./winograd conf/vgg16.conf
+ncu --set detailed -o report ./winograd conf/vgg16.conf
