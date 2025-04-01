@@ -6,8 +6,6 @@
 #include "utils.cuh"
 #include "winograd_cuda.h"
 
-
-
 __device__ __forceinline__ void multiply_G(const float in0,const float in1,const float in2,
     float& out0,float& out1,float& out2,float& out3,float& out4,float& out5)
 {
@@ -137,7 +135,7 @@ __global__ void winograd_BTdB(
 
     constexpr int INPUT_FRAME_H = TILES_H_PER_BLOCK * 4 + 2;
     constexpr int INPUT_FRAME_W = TILES_W_PER_BLOCK * 4 + 2;
-
+    //load to s_d
     __shared__ float s_d[INPUT_FRAME_H][INPUT_FRAME_W];
 
     for (int i = threadIdx.x; i < INPUT_FRAME_H * INPUT_FRAME_W; i += BLOCK_SIZE)
@@ -247,7 +245,7 @@ __global__ void winograd_ATtA(
     const int n = blockIdx.z;
 
     __shared__ float shared_6x6[NUM_TILES_PER_BLOCK][6 * 6];
-    #pragma omp parallel for
+    #pragma omp parallel for //useless
     for (int i = threadIdx.x; i < 6 * 6 * NUM_TILES_PER_BLOCK; i += BLOCK_SIZE)
     {
         const int local_tile_idx = i % NUM_TILES_PER_BLOCK;
@@ -292,7 +290,7 @@ __global__ void winograd_ATtA(
         }
     }
     __syncthreads();
-    #pragma omp parallel for
+    #pragma omp parallel for //useless
     for (int i = threadIdx.x; i < NUM_TILES_PER_BLOCK * 4 * 4; i += BLOCK_SIZE)
     {
         const int tile_offset = i % 16;
@@ -441,9 +439,8 @@ void winograd_convolution_cuda(float *h_img, const int N, const int C, const int
         CUDA_CALL(cudaFree(d_M));
     }
     CUDA_CALL(cudaDeviceSynchronize());
-
+    //final output
     float *h_out = (float *)malloc(N * K * OUT_H * OUT_W * sizeof(float));
     CUDA_CALL(cudaMemcpy(out, d_out, N * K * OUT_H * OUT_W * sizeof(float), cudaMemcpyDeviceToHost));
-
     CUDA_CALL(cudaFree(d_out));
 }

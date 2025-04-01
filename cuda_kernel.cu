@@ -19,14 +19,6 @@ void cublasMatrix(const int64_t M,const int64_t K,const int64_t N,float *hostA, 
     float beta = 0.0;
     // cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &alpha, dB, N, dA, K, &beta, dC, N);
      cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, M, N, K, &alpha, dA, K, dB, K, &beta, dC, M);
-    // // cublasGemmEx(handle, CUBLAS_OP_N, CUBLAS_OP_N,
-    //              N, M, K,
-    //              &alpha,
-    //              dB, CUDA_R_32F, N,
-    //              dA, CUDA_R_32F, K,
-    //              &beta,
-    //              dC, CUDA_R_32F, N,
-    //              CUDA_R_32F, CUBLAS_GEMM_DEFAULT_TENSOR_OP);
     cudaMemcpy(hostC, dC, M * N * sizeof(float), cudaMemcpyDeviceToHost);
 
     cudaFree(dA);

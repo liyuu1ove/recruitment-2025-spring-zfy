@@ -8,3 +8,4 @@ clean:
 	rm -f -r slurm-output
 	rm -f -r slurm-error
 	rm -f -r vtune
+	rm -f report.ncu-rep
