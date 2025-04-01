@@ -1,18 +1,11 @@
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 #include <cuda.h>
+#include <omp.h>
 
 #include "utils.cuh"
 #include "winograd_cuda.h"
 
-
-
-/*
-    filter_transform = [6, 6, OC, IC] GgGT 
-    image_transform = [6, 6, IC, Batch, th, tw] BTdB
-    sgemm = [6, 6, K, Batch, th, tw]//use cublas batch sgemm M
-    output_transform = [6, 6, OC, Batch, th, tw] -> [4, 4, th, tw] (per OC, Batch) -> [Batch, OC, H, W] AT M A
-*/
 
 
 __device__ __forceinline__ void multiply_G(const float in0,const float in1,const float in2,
@@ -42,13 +35,8 @@ __global__ void winograd_GgGT(
     const float *g, const int K, const int C,
     float *filter_transform)
 {
-    /*
-        input -> g (filter): [K, C, 3, 3]
-        output -> filter_transform : [6, 6, K, C]
-    */
 
     const int NUM_KERNELS = K * C;
-
     const int kc_idx_start = blockIdx.x * NUM_KERNELS_PER_BLOCK;
 
     __shared__ float shared_6x6[NUM_KERNELS_PER_BLOCK][6][6];
@@ -63,7 +51,6 @@ __global__ void winograd_GgGT(
         if (global_kc < NUM_KERNELS)
             shared_6x6[kc_idx][row_idx][col_idx] = g[global_kc * 9 + row_idx * 3 + col_idx];
     }
-
     __syncthreads();
 
     // Gg
@@ -141,13 +128,10 @@ __global__ void winograd_BTdB(
     const float *d, const int N, const int C, const int H, const int W,
     float *image_transform, const int TILES_H, const int TILES_W)//image_transform
 {
-    /*
-        Input: d [N, C, H, W]
-        Ouput: image_transform [6, 6, C, N, TILES_H, TILES_W]
-    */
+
     const int tile_col_idx_start = blockIdx.x * TILES_W_PER_BLOCK;
     const int tile_row_idx_start = blockIdx.y * TILES_H_PER_BLOCK;
-    const int nc = blockIdx.z; // channels
+    const int nc = blockIdx.z;
     const int c = nc % C;
     const int n = nc / C;
 
@@ -171,12 +155,12 @@ __global__ void winograd_BTdB(
     }
     __syncthreads();
 
-    // computing BTd
+    //BTd
     __shared__ float BTd[TILES_H_PER_BLOCK * TILES_W_PER_BLOCK][6][6];
 
     for (int i = threadIdx.x; i < TILES_H_PER_BLOCK * TILES_W_PER_BLOCK * 6; i += BLOCK_SIZE)
     {
-        // getting a col
+        //col-wise d
         const int col_idx = i % 6;
         const int tile_idx = i / 6;
 
@@ -196,7 +180,7 @@ __global__ void winograd_BTdB(
 
     for (int i = threadIdx.x; i < TILES_H_PER_BLOCK * TILES_W_PER_BLOCK * 6; i += BLOCK_SIZE)
     {
-        // getting a row
+        // row-wise BTd
         const int row_idx = i % 6;
         const int tile_idx = i / 6;
 
@@ -255,10 +239,7 @@ __global__ void winograd_ATtA(
     const float *t, const int N, const int K, const int TILES_H, const int TILES_W,
     float *out, const int OUT_H, const int OUT_W)//output_transform
 {
-    /*
-        input -> sgemm, [6 x 6 x K x N x TILES_H x TILES_W]
-        output -> conv output, [N x K x OUT_H x OUT_W]
-    */
+
     const int NUM_TILES = TILES_H * TILES_W;
 
     const int tile_idx_start = blockIdx.x * NUM_TILES_PER_BLOCK;
@@ -266,7 +247,7 @@ __global__ void winograd_ATtA(
     const int n = blockIdx.z;
 
     __shared__ float shared_6x6[NUM_TILES_PER_BLOCK][6 * 6];
-
+    #pragma omp parallel for
     for (int i = threadIdx.x; i < 6 * 6 * NUM_TILES_PER_BLOCK; i += BLOCK_SIZE)
     {
         const int local_tile_idx = i % NUM_TILES_PER_BLOCK;
@@ -279,11 +260,11 @@ __global__ void winograd_ATtA(
     }
     __syncthreads();
 
-    // computing ATt
+    //ATt
     __shared__ float shared_4x6[NUM_TILES_PER_BLOCK][4][6];
     for (int i = threadIdx.x; i < NUM_TILES_PER_BLOCK * 6; i += BLOCK_SIZE)
     {
-        // take out a col
+        //col-wise t
         const int col_idx = i % 6;
         const int tile_idx = i / 6;
 
@@ -297,10 +278,10 @@ __global__ void winograd_ATtA(
     }
     __syncthreads();
 
-    // will now compute ATtA
+    //ATtA
     for (int i = threadIdx.x; i < NUM_TILES_PER_BLOCK * 4; i += BLOCK_SIZE)
     {
-        // take out a row
+        //row-wise ATt
         const int row_idx = i % 4;
         const int tile_idx = i / 4;
 
@@ -311,7 +292,7 @@ __global__ void winograd_ATtA(
         }
     }
     __syncthreads();
-
+    #pragma omp parallel for
     for (int i = threadIdx.x; i < NUM_TILES_PER_BLOCK * 4 * 4; i += BLOCK_SIZE)
     {
         const int tile_offset = i % 16;
@@ -332,11 +313,6 @@ __global__ void winograd_ATtA(
     }
 }
 
-
-
-
-
-
 void winograd_convolution_cuda(float *h_img, const int N, const int C, const int H, const int W, const float *h_f, const int K, float *out)
 {
 
@@ -345,15 +321,15 @@ void winograd_convolution_cuda(float *h_img, const int N, const int C, const int
 
     float *d_filter_transform;
     float *d_F;
-    // computing filter transform
+    //filter transform
     {
         CUDA_CALL(cudaMalloc((void **)&d_F, K * C * 3 * 3 * sizeof(float)));
         CUDA_CALL(cudaMemcpy(d_F, h_f, K * C * 3 * 3 * sizeof(float), cudaMemcpyHostToDevice));
 
         CUDA_CALL(cudaMalloc((void **)&d_filter_transform, 6 * 6 * K * C * sizeof(float)));
 
-        const int NUM_KERNELS_PER_BLOCK = 1, //21
-                  BLOCK_SIZE = 256;//128
+        const int NUM_KERNELS_PER_BLOCK = 4,
+                  BLOCK_SIZE = 256;
 
         dim3 grid(divUp(K * C, 
                         NUM_KERNELS_PER_BLOCK));
@@ -376,7 +352,7 @@ void winograd_convolution_cuda(float *h_img, const int N, const int C, const int
 
         const int TILES_Y_PER_BLOCK = 4, 
                   TILES_X_PER_BLOCK = 4,
-                  BLOCK_SIZE = 256;//128
+                  BLOCK_SIZE = 256;
 
         dim3 grid(divUp(TILES_X, TILES_X_PER_BLOCK),
                   divUp(TILES_Y, TILES_Y_PER_BLOCK),
@@ -386,7 +362,7 @@ void winograd_convolution_cuda(float *h_img, const int N, const int C, const int
         winograd_BTdB<TILES_Y_PER_BLOCK, TILES_X_PER_BLOCK, BLOCK_SIZE><<<grid, BLOCK_SIZE>>>(d_img, N, C, H, W, d_image_transform, TILES_Y, TILES_X);
     }
 
-    // hadamard
+    // U V
     float *d_M;
     {
         CUDA_CALL(cudaMalloc((void **)&d_M, 6 * 6 * K * N * TILES_Y * TILES_X * sizeof(float)));
@@ -452,7 +428,7 @@ void winograd_convolution_cuda(float *h_img, const int N, const int C, const int
               OUT_W = (W - 3 + 1);
     {
         CUDA_CALL(cudaMalloc((void **)&d_out, N * K * OUT_H * OUT_W * sizeof(float)));
-        const int NUM_TILES_PER_BLOCK = 64,
+        const int NUM_TILES_PER_BLOCK = 32,
                   BLOCK_SIZE = 256;
 
         dim3 grid(divUp(TILES_Y * TILES_X, NUM_TILES_PER_BLOCK), 
