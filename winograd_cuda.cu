@@ -440,7 +440,7 @@ void winograd_convolution_cuda(float *h_img, const int N, const int C, const int
     }
     CUDA_CALL(cudaDeviceSynchronize());
     //final output
-    float *h_out = (float *)malloc(N * K * OUT_H * OUT_W * sizeof(float));
+    //float *h_out = (float *)malloc(N * K * OUT_H * OUT_W * sizeof(float));
     CUDA_CALL(cudaMemcpy(out, d_out, N * K * OUT_H * OUT_W * sizeof(float), cudaMemcpyDeviceToHost));
     CUDA_CALL(cudaFree(d_out));
 }
